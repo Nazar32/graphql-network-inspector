@@ -1,4 +1,5 @@
 import { chromeProvider } from './chromeProvider'
+import { bumpCounter, setInfo, logDiagnostic } from './diagnostics'
 
 /**
  * A listener for Chrome DevTools Protocol events.
@@ -16,10 +17,18 @@ const handleEvent = (
   method: string,
   params?: object
 ) => {
+  bumpCounter('cdpEventAny')
+  setInfo(
+    'cdpLastEvent',
+    `${method} from=${source.tabId} attached=${attachedTabId} listeners=${listeners.size}`
+  )
+
   if (source.tabId !== attachedTabId) {
+    bumpCounter('cdpEventDropped')
     return
   }
 
+  bumpCounter('cdpEventKept')
   listeners.forEach((listener) => listener(method, params as any))
 }
 
@@ -119,6 +128,14 @@ export const sendDebuggerCommand = <T>(
   return new Promise((resolve) => {
     chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
       if (chrome.runtime.lastError) {
+        logDiagnostic('cdpCommandFailed', {
+          method,
+          message: chrome.runtime.lastError.message,
+        })
+        setInfo(
+          'cdpLastError',
+          `${method}: ${chrome.runtime.lastError.message}`
+        )
         resolve(undefined)
         return
       }

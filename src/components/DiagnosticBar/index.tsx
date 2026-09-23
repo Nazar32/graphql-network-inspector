@@ -17,7 +17,12 @@ const DiagnosticBar = () => {
 
   const counters = diagnosticCounters
   const totals = [
+    `setup:${counters.cdpSetup || 0}/${counters.cdpTeardown || 0}`,
     `attached:${diagnosticInfo.cdpAttached || '?'}`,
+    `enable:${diagnosticInfo.cdpEnabled || '?'}`,
+    `events:${counters.cdpEventAny || 0}`,
+    `kept:${counters.cdpEventKept || 0}`,
+    `dropped:${counters.cdpEventDropped || 0}`,
     `req:${counters.cdpRequest || 0}`,
     `graphql:${counters.cdpGraphql || 0}`,
     `resp:${counters.cdpResponse || 0}`,
@@ -30,6 +35,8 @@ const DiagnosticBar = () => {
       <div>CDP {totals}</div>
       <div>ROWS {diagnosticInfo.cdpRows}</div>
       <div>LAST {diagnosticInfo.cdpBody}</div>
+      <div>EVENT {diagnosticInfo.cdpLastEvent}</div>
+      <div>ERROR {diagnosticInfo.cdpLastError}</div>
     </div>
   )
 }

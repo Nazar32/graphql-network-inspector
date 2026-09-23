@@ -328,6 +328,8 @@ export const useDebuggerNetworkMonitor = (): [
     const chrome = chromeProvider()
     const tabId = chrome.devtools.inspectedWindow.tabId
 
+    bumpCounter('cdpSetup')
+
     const removeListener = addDebuggerListener((method, params) => {
       if (method === 'Network.requestWillBeSent') {
         handleRequestWillBeSent(tabId, params)
@@ -348,14 +350,16 @@ export const useDebuggerNetworkMonitor = (): [
         return
       }
 
-      await sendDebuggerCommand(tabId, 'Network.enable', {
-        maxTotalBufferSize: 100 * 1000 * 1000,
-        maxResourceBufferSize: 20 * 1000 * 1000,
-      })
-      logDiagnostic('cdpNetworkEnabled', { tabId })
+      // Send no parameters. The buffer size parameters are marked
+      // experimental in the protocol, and a rejected command leaves the
+      // Network domain disabled, which delivers no events at all.
+      const enabled = await sendDebuggerCommand(tabId, 'Network.enable')
+      setInfo('cdpEnabled', enabled === undefined ? 'failed' : 'ok')
+      logDiagnostic('cdpNetworkEnabled', { tabId, enabled: enabled !== undefined })
     })
 
     return () => {
+      bumpCounter('cdpTeardown')
       removeListener()
       detachDebugger(tabId)
     }
