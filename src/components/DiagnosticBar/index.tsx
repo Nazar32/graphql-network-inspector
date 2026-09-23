@@ -25,6 +25,10 @@ const DiagnosticBar = () => {
     `matched:${counters.matched}`,
     `postData:${counters.postData}`,
     `har:${counters.har}`,
+    `applied:${counters.applied || 0}`,
+    `cleared:${counters.cleared || 0}`,
+    `nav:${counters.navigated || 0}`,
+    `harSet:${counters.harSet || 0}`,
   ].join('  ')
 
   return (
@@ -32,6 +36,10 @@ const DiagnosticBar = () => {
       <div>DIAG {totals}</div>
       <div>FINISHED {diagnosticInfo.finished}</div>
       <div>CONTENT {diagnosticInfo.content}</div>
+      <div>ROWS {diagnosticInfo.rows}</div>
+      <div>
+        CLEAR {diagnosticInfo.cleared} | HARSET {diagnosticInfo.harSet}
+      </div>
     </div>
   )
 }

@@ -14,6 +14,7 @@ import {
 } from '../../hooks/useOperationFilters'
 import { IClearWebRequestsOptions } from '../../hooks/useNetworkMonitor'
 import { IUserSettings } from '@/services/userSettingsService'
+import { bumpCounter } from '../../services/diagnostics'
 
 /** Debounce delay in ms for filter input */
 const FILTER_DEBOUNCE_MS = 150
@@ -158,6 +159,7 @@ export const NetworkPanel = (props: NetworkPanelProps) => {
 
   useEffect(() => {
     return onNavigate(() => {
+      bumpCounter('navigated')
       // When navigating to a new page, we always want to clear
       // pending requests as they could never complete once
       // the page has changed.

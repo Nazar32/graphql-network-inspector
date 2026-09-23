@@ -434,6 +434,7 @@ export const useNetworkMonitor = (): [
             setRequests((prevRequests) => {
               return prevRequests.map((prevRequest) => {
                 if (prevRequest.id === matchedRequest.id) {
+                  bumpCounter('applied')
                   return {
                     ...prevRequest,
                     ...processNetworkRequest(details, responseBody),
@@ -539,6 +540,8 @@ export const useNetworkMonitor = (): [
 
         // Check if still mounted before setting state
         if (isMountedRef.current) {
+          bumpCounter('harSet')
+          setInfo('harSet', `replacedWith=${validResults.length}`)
           setRequests(validResults)
         }
       } catch (error) {
@@ -551,6 +554,14 @@ export const useNetworkMonitor = (): [
   const clearRequests = useCallback(
     (opts?: IClearWebRequestsOptions) => {
       const { clearPending = true, clearAll = true } = opts || {}
+
+      bumpCounter('cleared')
+      setInfo(
+        'cleared',
+        `clearAll=${clearAll} clearPending=${clearPending} rowsBefore=${
+          getLatestRequests().length
+        }`
+      )
 
       if (clearAll) {
         setRequests([])
@@ -565,7 +576,7 @@ export const useNetworkMonitor = (): [
         })
       }
     },
-    [setRequests]
+    [setRequests, getLatestRequests]
   )
 
   // Collect historic network data in case any events fired before we started listening
@@ -606,6 +617,13 @@ export const useNetworkMonitor = (): [
   // Since we build up the data from multiple events. We only want
   // to display results that have enough data to be useful.
   const completeRequests = requests.filter(isRequestComplete)
+
+  setInfo(
+    'rows',
+    `all=${requests.length} shown=${completeRequests.length} withResponse=${
+      requests.filter((request) => request.response).length
+    } withStatus=${requests.filter((request) => request.status !== -1).length}`
+  )
 
   return [completeRequests, clearRequests]
 }
