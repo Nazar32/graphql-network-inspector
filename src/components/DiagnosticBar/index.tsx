@@ -39,6 +39,8 @@ const DiagnosticBar = () => {
       <div>ROWS {diagnosticInfo.rows}</div>
       <div>GQL {diagnosticInfo.gql}</div>
       <div>MATCH {diagnosticInfo.match}</div>
+      <div>WANT {diagnosticInfo.wantUrl}</div>
+      <div>GQLROWS {diagnosticInfo.gqlRows}</div>
       <div>CHOSEN {diagnosticInfo.chosen}</div>
       <div>
         CLEAR {diagnosticInfo.cleared} | HARSET {diagnosticInfo.harSet}

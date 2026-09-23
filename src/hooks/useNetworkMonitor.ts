@@ -168,6 +168,35 @@ const findMatchingWebRequest = async (
   const matches = scored.filter((match) => match.rank > 0)
 
   if (details.request?.url?.includes('graphql')) {
+    const gqlRows = webRequests.filter((request) =>
+      request.url?.includes('graphql')
+    )
+    setInfo(
+      'gqlRows',
+      gqlRows
+        .slice(0, 5)
+        .map((request) => {
+          const native = request.native?.webRequest
+          const urlState = !native?.url
+            ? 'none'
+            : native.url === details.request.url
+            ? 'same'
+            : 'diff'
+          return [
+            `id=${request.id}`,
+            `req=${request.request?.body ? 1 : 0}`,
+            `res=${request.response ? 1 : 0}`,
+            `nat=${native ? 1 : 0}`,
+            `m=${native?.method || '-'}`,
+            `u=${urlState}`,
+          ].join(',')
+        })
+        .join('  ')
+    )
+    setInfo('wantUrl', `${details.request.method} ${details.request.url}`)
+  }
+
+  if (details.request?.url?.includes('graphql')) {
     setInfo(
       'match',
       [
