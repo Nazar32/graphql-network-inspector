@@ -32,14 +32,72 @@ const handleEvent = (
   listeners.forEach((listener) => listener(method, params as any))
 }
 
-const handleDetach = (source: chrome.debugger.Debuggee) => {
+const detachListeners = new Set<(reason?: string) => void>()
+
+const handleDetach = (source: chrome.debugger.Debuggee, reason?: string) => {
   if (source.tabId !== attachedTabId) {
     return
   }
 
+  bumpCounter('cdpDetached')
+  setInfo('cdpDetach', `reason=${reason}`)
+  logDiagnostic('cdpDetached', { tabId: source.tabId, reason })
+
   attachedTabId = null
-  attachCount = 0
   attachPromise = null
+
+  detachListeners.forEach((listener) => listener(reason))
+}
+
+/**
+ * Listen for the debugger being detached.
+ *
+ * Chrome drops the attachment on some navigations, which stops every event
+ * without warning. A caller uses this to attach again.
+ *
+ * @param listener called with the reason Chrome gave
+ * @returns a function that removes the listener
+ */
+export const addDetachListener = (
+  listener: (reason?: string) => void
+): (() => void) => {
+  detachListeners.add(listener)
+  return () => {
+    detachListeners.delete(listener)
+  }
+}
+
+/**
+ * Report whether the debugger is currently attached.
+ */
+export const isDebuggerAttached = (): boolean => attachedTabId !== null
+
+const doAttach = (tabId: number): Promise<boolean> => {
+  const chrome = chromeProvider()
+
+  return new Promise<boolean>((resolve) => {
+    chrome.debugger.attach({ tabId }, '1.3', () => {
+      if (chrome.runtime.lastError) {
+        const message = chrome.runtime.lastError.message
+        logDiagnostic('cdpAttachFailed', { tabId, message })
+        setInfo('cdpAttachError', String(message))
+
+        // Chrome reports this when we are already attached, which is not a
+        // failure for our purposes.
+        if (message?.includes('Another debugger is already attached')) {
+          attachedTabId = tabId
+          resolve(true)
+          return
+        }
+
+        resolve(false)
+        return
+      }
+
+      attachedTabId = tabId
+      resolve(true)
+    })
+  })
 }
 
 /**
@@ -54,32 +112,29 @@ const handleDetach = (source: chrome.debugger.Debuggee) => {
  */
 export const attachDebugger = (tabId: number): Promise<boolean> => {
   attachCount += 1
+  return ensureDebuggerAttached(tabId)
+}
 
+/**
+ * Make sure the debugger is attached, without claiming another hold on it.
+ *
+ * Use this to attach again after Chrome has dropped the session.
+ *
+ * @param tabId the tab to attach to
+ * @returns true if the debugger is attached
+ */
+export const ensureDebuggerAttached = (tabId: number): Promise<boolean> => {
   if (attachPromise) {
     return attachPromise
   }
 
   const chrome = chromeProvider()
+  chrome.debugger.onEvent.removeListener(handleEvent)
+  chrome.debugger.onDetach?.removeListener(handleDetach)
+  chrome.debugger.onEvent.addListener(handleEvent)
+  chrome.debugger.onDetach?.addListener(handleDetach)
 
-  attachPromise = new Promise<boolean>((resolve) => {
-    chrome.debugger.onEvent.addListener(handleEvent)
-    chrome.debugger.onDetach?.addListener(handleDetach)
-
-    chrome.debugger.attach({ tabId }, '1.3', () => {
-      if (chrome.runtime.lastError) {
-        console.warn(
-          '[GNI] debugger attach failed',
-          chrome.runtime.lastError.message
-        )
-        resolve(false)
-        return
-      }
-
-      attachedTabId = tabId
-      resolve(true)
-    })
-  })
-
+  attachPromise = doAttach(tabId)
   return attachPromise
 }
 

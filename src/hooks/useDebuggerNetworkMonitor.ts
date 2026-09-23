@@ -21,6 +21,9 @@ import {
   detachDebugger,
   sendDebuggerCommand,
   addDebuggerListener,
+  addDetachListener,
+  ensureDebuggerAttached,
+  isDebuggerAttached,
 } from '../services/debuggerSession'
 import { logDiagnostic, bumpCounter, setInfo } from '../services/diagnostics'
 import useLatestState from './useLatestState'
@@ -366,26 +369,51 @@ export const useDebuggerNetworkMonitor = (): [
       }
     })
 
-    attachDebugger(tabId).then(async (isAttached) => {
+    const enableNetwork = async (isFirstAttach: boolean) => {
+      const isAttached = isFirstAttach
+        ? await attachDebugger(tabId)
+        : await ensureDebuggerAttached(tabId)
+
       setInfo('cdpAttached', String(isAttached))
-      logDiagnostic('cdpAttach', { tabId, isAttached })
+      logDiagnostic('cdpAttach', { tabId, isAttached, isFirstAttach })
 
       if (!isAttached) {
         return
       }
 
-      // Send no parameters. The buffer size parameters are marked
-      // experimental in the protocol, and a rejected command leaves the
-      // Network domain disabled, which delivers no events at all.
+      // maxPostDataSize asks Chrome to put the request body straight into
+      // requestWillBeSent. Without it only a hasPostData flag arrives.
       const enabled = await sendDebuggerCommand(tabId, 'Network.enable', {
         maxPostDataSize: 5 * 1024 * 1024,
       })
       setInfo('cdpEnabled', enabled === undefined ? 'failed' : 'ok')
-      logDiagnostic('cdpNetworkEnabled', { tabId, enabled: enabled !== undefined })
+      logDiagnostic('cdpNetworkEnabled', {
+        tabId,
+        enabled: enabled !== undefined,
+      })
+    }
+
+    // Chrome drops the attachment on some navigations, which silently ends
+    // every event. Attach again whenever that happens.
+    const removeDetachListener = addDetachListener(() => {
+      bumpCounter('cdpReattach')
+      setTimeout(() => enableNetwork(false), 200)
     })
+
+    // A detach is not always reported, so check the session as well.
+    const watchdog = setInterval(() => {
+      if (!isDebuggerAttached()) {
+        bumpCounter('cdpWatchdog')
+        enableNetwork(false)
+      }
+    }, 2000)
+
+    enableNetwork(true)
 
     return () => {
       bumpCounter('cdpTeardown')
+      clearInterval(watchdog)
+      removeDetachListener()
       removeListener()
       detachDebugger(tabId)
     }

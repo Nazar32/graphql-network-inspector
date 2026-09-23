@@ -32,6 +32,9 @@ const DiagnosticBar = () => {
     `fetchedPost:${counters.cdpFetchedPostData || 0}`,
     `fetchFailed:${counters.cdpFetchPostDataFailed || 0}`,
     `finTracked:${counters.cdpFinishedTracked || 0}`,
+    `detached:${counters.cdpDetached || 0}`,
+    `reattach:${counters.cdpReattach || 0}`,
+    `watchdog:${counters.cdpWatchdog || 0}`,
   ].join('  ')
 
   return (
@@ -41,6 +44,10 @@ const DiagnosticBar = () => {
       <div>LAST {diagnosticInfo.cdpBody}</div>
       <div>REQ {diagnosticInfo.cdpReq}</div>
       <div>EVENT {diagnosticInfo.cdpLastEvent}</div>
+      <div>
+        DETACH {diagnosticInfo.cdpDetach} | ATTACHERR{' '}
+        {diagnosticInfo.cdpAttachError}
+      </div>
       <div>ERROR {diagnosticInfo.cdpLastError}</div>
     </div>
   )
