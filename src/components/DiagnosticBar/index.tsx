@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { diagnosticCounters } from '../../services/diagnostics'
+import { diagnosticCounters, diagnosticInfo } from '../../services/diagnostics'
 
 /**
- * Show the live event counters at the bottom of the panel.
+ * Show the live event counters and the raw values of the most recent
+ * GraphQL request at the top of the panel.
  *
  * This exists only to investigate issue #204. Remove it once the cause is
  * known.
@@ -16,7 +17,7 @@ const DiagnosticBar = () => {
   }, [])
 
   const counters = diagnosticCounters
-  const text = [
+  const totals = [
     `before:${counters.before}`,
     `finished:${counters.finished}`,
     `gate:${counters.gate}`,
@@ -27,8 +28,10 @@ const DiagnosticBar = () => {
   ].join('  ')
 
   return (
-    <div className="fixed bottom-4 left-6 text-md font-mono text-yellow-500 z-50">
-      DIAG {text}
+    <div className="fixed top-0 left-0 right-0 bg-black text-yellow-400 font-mono text-xs p-2 z-50 break-all border-b border-yellow-700">
+      <div>DIAG {totals}</div>
+      <div>FINISHED {diagnosticInfo.finished}</div>
+      <div>CONTENT {diagnosticInfo.content}</div>
     </div>
   )
 }

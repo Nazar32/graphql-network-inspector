@@ -45,3 +45,22 @@ export const diagnosticCounters: Record<string, number> = {
 export const bumpCounter = (name: string, by = 1): void => {
   diagnosticCounters[name] = (diagnosticCounters[name] || 0) + by
 }
+
+/**
+ * The raw values of the most recent events, shown in the panel so they can
+ * be read from a screenshot.
+ */
+export const diagnosticInfo: Record<string, string> = {
+  finished: '(none yet)',
+  content: '(none yet)',
+}
+
+/**
+ * Record the raw values of an event.
+ *
+ * @param name the event to record
+ * @param value a short description of the values
+ */
+export const setInfo = (name: string, value: string): void => {
+  diagnosticInfo[name] = value
+}

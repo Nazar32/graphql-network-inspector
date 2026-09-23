@@ -27,7 +27,7 @@ import {
   MATCH_CONFIDENCE_RANK,
 } from '../helpers/networkHelpers'
 import useLatestState from './useLatestState'
-import { logDiagnostic, bumpCounter } from '../services/diagnostics'
+import { logDiagnostic, bumpCounter, setInfo } from '../services/diagnostics'
 
 export interface IClearWebRequestsOptions {
   clearPending?: boolean
@@ -334,6 +334,23 @@ export const useNetworkMonitor = (): [
         if (details.request?.postData?.text) {
           bumpCounter('postData')
         }
+
+        if (details.request?.url?.includes('graphql')) {
+          setInfo(
+            'finished',
+            [
+              `status=${details.response?.status}`,
+              `statusText=${JSON.stringify(details.response?.statusText)}`,
+              `bodySize=${details.response?.bodySize}`,
+              `transfer=${(details.response as any)?._transferSize}`,
+              `respHeaders=${details.response?.headers?.length}`,
+              `time=${details.time}`,
+              `reqHeaders=${details.request?.headers?.length}`,
+              `postData=${Boolean(details.request?.postData?.text)}`,
+              `error=${JSON.stringify((details as any)._error)}`,
+            ].join(' ')
+          )
+        }
         logDiagnostic('onRequestFinished', {
           url: details.request.url,
           method: details.request.method,
@@ -388,6 +405,19 @@ export const useNetworkMonitor = (): [
             bumpCounter('content')
             if (matchedRequest) {
               bumpCounter('matched')
+            }
+
+            if (details.request?.url?.includes('graphql')) {
+              setInfo(
+                'content',
+                [
+                  `type=${typeof content}`,
+                  `len=${content ? content.length : 0}`,
+                  `encoding=${JSON.stringify(encoding)}`,
+                  `head=${JSON.stringify((content || '').slice(0, 60))}`,
+                  `matched=${Boolean(matchedRequest)}`,
+                ].join(' ')
+              )
             }
             logDiagnostic('getContent', {
               url: details.request.url,
