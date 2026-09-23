@@ -4,6 +4,7 @@ import { useSSEListener } from './useSSEListener'
 import { useWebSocketListener } from './useWebSocketListener'
 import { ITrackedConnection, ISubscriptionRequest } from './types'
 import { connectionToRequest } from './utils'
+import { logDiagnostic } from '../../services/diagnostics'
 
 /** Maximum age in ms for closed connections before cleanup (5 minutes) */
 const CONNECTION_CLEANUP_TIMEOUT_MS = 5 * 60 * 1000
@@ -65,11 +66,17 @@ export const useGraphqlSubscriptions = (
 
     chrome.debugger.onDetach?.addListener(handleDetach)
 
+    logDiagnostic('debuggerAttachRequested', { tabId })
+
     chrome.debugger.attach({ tabId }, '1.3', () => {
       if (chrome.runtime.lastError) {
+        logDiagnostic('debuggerAttachFailed', {
+          message: chrome.runtime.lastError.message,
+        })
         console.warn('Debugger attach failed:', chrome.runtime.lastError.message)
         return
       }
+      logDiagnostic('debuggerAttached', { tabId })
       chrome.debugger.sendCommand({ tabId }, 'Network.enable', undefined, () => {
         if (chrome.runtime.lastError) {
           console.warn('Network.enable failed:', chrome.runtime.lastError.message)

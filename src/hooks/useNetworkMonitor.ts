@@ -27,6 +27,7 @@ import {
   MATCH_CONFIDENCE_RANK,
 } from '../helpers/networkHelpers'
 import useLatestState from './useLatestState'
+import { logDiagnostic } from '../services/diagnostics'
 
 export interface IClearWebRequestsOptions {
   clearPending?: boolean
@@ -223,6 +224,13 @@ export const useNetworkMonitor = (): [
         return
       }
 
+      logDiagnostic('onBeforeRequest', {
+        url: details.url,
+        method: details.method,
+        requestId: details.requestId,
+        hasRawBody: Boolean(details.requestBody?.raw?.length),
+      })
+
       setRequests((request) => {
         const newIncompleteRequest: IIncompleteNetworkRequest = {
           id: details.requestId,
@@ -321,6 +329,15 @@ export const useNetworkMonitor = (): [
   const handleRequestFinished = useCallback(
     async (details: chrome.devtools.network.Request) => {
       try {
+        logDiagnostic('onRequestFinished', {
+          url: details.request.url,
+          method: details.request.method,
+          status: details.response?.status,
+          hasPostData: Boolean(details.request?.postData?.text),
+          bodySize: details.request?.bodySize,
+          startedDateTime: details.startedDateTime,
+        })
+
         if (
           details.request.method === 'GET' &&
           urlHasFileExtension(details.request.url)
@@ -341,6 +358,12 @@ export const useNetworkMonitor = (): [
             request.method === details.request.method
         )
 
+        logDiagnostic('pendingCandidate', {
+          url: details.request.url,
+          hasPendingCandidate,
+          pendingCount: getLatestRequests().filter((r) => !r.response).length,
+        })
+
         if (!hasPendingCandidate) {
           return
         }
@@ -353,6 +376,13 @@ export const useNetworkMonitor = (): [
             const responseBody = encoding === 'base64' ? atob(content) : content
             const requests = getLatestRequests()
             const matchedRequest = await findMatchingWebRequest(requests, details)
+
+            logDiagnostic('getContent', {
+              url: details.request.url,
+              encoding,
+              contentLength: content ? content.length : 0,
+              matched: Boolean(matchedRequest),
+            })
 
             // Check again after async operation
             if (!isMountedRef.current || !matchedRequest) {
@@ -518,6 +548,12 @@ export const useNetworkMonitor = (): [
   }, [handleBeforeSendHeaders])
 
   useEffect(() => {
+    logDiagnostic('registerOnRequestFinished', {
+      hasApi: Boolean(
+        typeof chrome !== 'undefined' &&
+          chrome.devtools?.network?.onRequestFinished
+      ),
+    })
     return onRequestFinished(handleRequestFinished)
   }, [handleRequestFinished])
 
