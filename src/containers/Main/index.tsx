@@ -1,9 +1,7 @@
 import { useCallback, useState } from 'react'
 import { SplitPaneLayout } from '@/components/Layout'
-import {
-  IClearWebRequestsOptions,
-  useNetworkMonitor,
-} from '@/hooks/useNetworkMonitor'
+import { IClearWebRequestsOptions } from '@/hooks/useNetworkMonitor'
+import { useDebuggerNetworkMonitor } from '@/hooks/useDebuggerNetworkMonitor'
 import { useSearch } from '@/hooks/useSearch'
 import { useNetworkTabs } from '@/hooks/useNetworkTabs'
 import { NetworkPanel } from '../NetworkPanel'
@@ -20,7 +18,7 @@ export const Main = () => {
   )
   const { operationFilters } = useOperationFilters()
   const [userSettings, setUserSettings] = useUserSettings()
-  const [networkRequests, clearWebRequests] = useNetworkMonitor()
+  const [networkRequests, clearWebRequests] = useDebuggerNetworkMonitor()
   const [webSocketNetworkRequests, clearWebSocketNetworkRequests] =
     useGraphqlSubscriptions({
       isEnabled: operationFilters.subscription,

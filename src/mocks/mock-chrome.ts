@@ -35,6 +35,74 @@ export const emitDebuggerEvent = (
 export const clearDebuggerListeners = () => {
   debuggerEventListeners.length = 0
 }
+
+// Response bodies, keyed by the protocol request id, so that a mocked
+// Network.getResponseBody command can answer with the right one
+const cdpResponseBodies = new Map<string, string>()
+
+/**
+ * Turn the mock requests into Chrome DevTools Protocol events.
+ *
+ * The panel reads network traffic over the protocol, so the mocks have to
+ * speak it too.
+ *
+ * @returns one set of events per mock request
+ */
+const buildCdpEvents = () => {
+  return mockRequests
+    .filter((mockRequest) => {
+      const networkRequest =
+        mockRequest.networkRequest as chrome.devtools.network.Request
+      // Websocket mocks carry no body and no getContent
+      return (
+        typeof networkRequest.getContent === 'function' &&
+        Boolean(networkRequest.request?.postData?.text)
+      )
+    })
+    .map((mockRequest, index) => {
+      const networkRequest =
+        mockRequest.networkRequest as chrome.devtools.network.Request
+      const requestId = `cdp-${index}`
+
+      let body = ''
+      networkRequest.getContent((content: string) => {
+        body = content
+      })
+      cdpResponseBodies.set(requestId, body)
+
+      const headers: Record<string, string> = {}
+      ;(networkRequest.request.headers || []).forEach((header) => {
+        headers[header.name] = header.value
+      })
+
+      return {
+        requestWillBeSent: {
+          requestId,
+          request: {
+            url: networkRequest.request.url,
+            method: networkRequest.request.method,
+            headers,
+            postData: networkRequest.request.postData?.text,
+          },
+          timestamp: 1000 + index,
+        },
+        responseReceived: {
+          requestId,
+          response: {
+            status: networkRequest.response.status,
+            statusText: networkRequest.response.statusText,
+            headers: { 'content-type': 'application/json' },
+            encodedDataLength: networkRequest.response.bodySize,
+          },
+        },
+        loadingFinished: {
+          requestId,
+          timestamp: 1000 + index + 1.1,
+          encodedDataLength: networkRequest.response.bodySize,
+        },
+      }
+    })
+}
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.code === 'Digit1') {
     mockRequests.forEach(async (request) => {
@@ -131,7 +199,11 @@ const mockedChrome: DeepPartial<typeof chrome> = {
     },
   },
   debugger: {
-    attach: ((_target: chrome.debugger.Debuggee, _version: string, callback?: () => void) => {
+    attach: ((
+      _target: chrome.debugger.Debuggee,
+      _version: string,
+      callback?: () => void
+    ) => {
       if (callback) callback()
       else return Promise.resolve()
     }) as typeof chrome.debugger.attach,
@@ -141,16 +213,48 @@ const mockedChrome: DeepPartial<typeof chrome> = {
     }) as typeof chrome.debugger.detach,
     sendCommand: ((
       _target: chrome.debugger.Debuggee,
-      _method: string,
-      _commandParams?: object,
+      method: string,
+      commandParams?: object,
       callback?: (result?: object) => void
     ) => {
-      if (callback) callback()
-      else return Promise.resolve({})
+      let result: object | undefined
+
+      if (method === 'Network.getResponseBody') {
+        const requestId = (commandParams as { requestId?: string })?.requestId
+        result = {
+          body: cdpResponseBodies.get(requestId || '') || '',
+          base64Encoded: false,
+        }
+      }
+
+      if (callback) callback(result)
+      else return Promise.resolve(result || {})
     }) as typeof chrome.debugger.sendCommand,
     onEvent: {
       addListener: (callback: DebuggerEventCallback) => {
         debuggerEventListeners.push(callback)
+
+        // Replay the mock traffic so the panel has something to show. The
+        // delay lets the caller finish attaching first.
+        setTimeout(() => {
+          buildCdpEvents().forEach((events) => {
+            callback(
+              { tabId: 1 },
+              'Network.requestWillBeSent',
+              events.requestWillBeSent
+            )
+            callback(
+              { tabId: 1 },
+              'Network.responseReceived',
+              events.responseReceived
+            )
+            callback(
+              { tabId: 1 },
+              'Network.loadingFinished',
+              events.loadingFinished
+            )
+          })
+        }, 0)
       },
       removeListener: (callback: DebuggerEventCallback) => {
         const index = debuggerEventListeners.indexOf(callback)
