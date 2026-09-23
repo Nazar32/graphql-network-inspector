@@ -27,7 +27,7 @@ import {
   MATCH_CONFIDENCE_RANK,
 } from '../helpers/networkHelpers'
 import useLatestState from './useLatestState'
-import { logDiagnostic } from '../services/diagnostics'
+import { logDiagnostic, bumpCounter } from '../services/diagnostics'
 
 export interface IClearWebRequestsOptions {
   clearPending?: boolean
@@ -224,6 +224,7 @@ export const useNetworkMonitor = (): [
         return
       }
 
+      bumpCounter('before')
       logDiagnostic('onBeforeRequest', {
         url: details.url,
         method: details.method,
@@ -329,6 +330,10 @@ export const useNetworkMonitor = (): [
   const handleRequestFinished = useCallback(
     async (details: chrome.devtools.network.Request) => {
       try {
+        bumpCounter('finished')
+        if (details.request?.postData?.text) {
+          bumpCounter('postData')
+        }
         logDiagnostic('onRequestFinished', {
           url: details.request.url,
           method: details.request.method,
@@ -358,6 +363,9 @@ export const useNetworkMonitor = (): [
             request.method === details.request.method
         )
 
+        if (hasPendingCandidate) {
+          bumpCounter('gate')
+        }
         logDiagnostic('pendingCandidate', {
           url: details.request.url,
           hasPendingCandidate,
@@ -377,6 +385,10 @@ export const useNetworkMonitor = (): [
             const requests = getLatestRequests()
             const matchedRequest = await findMatchingWebRequest(requests, details)
 
+            bumpCounter('content')
+            if (matchedRequest) {
+              bumpCounter('matched')
+            }
             logDiagnostic('getContent', {
               url: details.request.url,
               encoding,
@@ -419,6 +431,9 @@ export const useNetworkMonitor = (): [
   const handleHAREntries = useCallback(
     async (entries: chrome.devtools.network.Request[]) => {
       try {
+        bumpCounter('har', entries.length)
+        logDiagnostic('harEntries', { count: entries.length })
+
         const validationResults = await Promise.all(
           entries.map(async (details) => {
             if (!('getContent' in details)) {

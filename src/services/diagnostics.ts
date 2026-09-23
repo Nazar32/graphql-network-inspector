@@ -22,3 +22,26 @@ export const logDiagnostic = (event: string, data?: unknown): void => {
     // Diagnostics must never break the panel
   }
 }
+
+/**
+ * Live counters shown in the panel, so the state can be read from a
+ * screenshot without opening any console.
+ */
+export const diagnosticCounters: Record<string, number> = {
+  before: 0,
+  finished: 0,
+  gate: 0,
+  content: 0,
+  matched: 0,
+  postData: 0,
+  har: 0,
+}
+
+/**
+ * Add one to a counter.
+ *
+ * @param name the counter to raise
+ */
+export const bumpCounter = (name: string, by = 1): void => {
+  diagnosticCounters[name] = (diagnosticCounters[name] || 0) + by
+}
