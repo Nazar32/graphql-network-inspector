@@ -17,6 +17,7 @@ import {
   getRequestBody,
   isRequestComplete,
   urlHasFileExtension,
+  isPreflightRequest,
   isMultipartMixedResponse,
   getMultipartMixedBoundary,
   parseMultipartMixedResponse,
@@ -285,6 +286,12 @@ export const useNetworkMonitor = (): [
         return
       }
 
+      // A CORS preflight carries no GraphQL payload. Keeping a row for it
+      // lets the preflight absorb the response that belongs to the POST.
+      if (isPreflightRequest(details.method)) {
+        return
+      }
+
       bumpCounter('before')
       logDiagnostic('onBeforeRequest', {
         url: details.url,
@@ -392,6 +399,11 @@ export const useNetworkMonitor = (): [
     async (details: chrome.devtools.network.Request) => {
       try {
         bumpCounter('finished')
+        if (details.request?.url?.includes('graphql')) {
+          bumpCounter(
+            details.request.method === 'POST' ? 'finGqlPost' : 'finGqlOther'
+          )
+        }
         if (details.request?.postData?.text) {
           bumpCounter('postData')
         }
@@ -425,6 +437,10 @@ export const useNetworkMonitor = (): [
           details.request.method === 'GET' &&
           urlHasFileExtension(details.request.url)
         ) {
+          return
+        }
+
+        if (isPreflightRequest(details.request.method)) {
           return
         }
 
@@ -600,7 +616,9 @@ export const useNetworkMonitor = (): [
         )
 
         // Check if still mounted before setting state
-        if (isMountedRef.current) {
+        // Replacing the list with an empty array throws away requests that
+        // arrived while the historic read was still running.
+        if (isMountedRef.current && validResults.length) {
           bumpCounter('harSet')
           setInfo('harSet', `replacedWith=${validResults.length}`)
           setRequests(validResults)
@@ -682,6 +700,20 @@ export const useNetworkMonitor = (): [
   const gqlRows = requests.filter((request) =>
     request.url.includes('graphql')
   )
+  const byMethod = (method: string) => {
+    const rows = gqlRows.filter(
+      (request) => request.method?.toUpperCase() === method
+    )
+    return `${method}:${rows.length}/req${
+      rows.filter((r) => r.request?.body).length
+    }/res${rows.filter((r) => r.response).length}`
+  }
+
+  setInfo(
+    'gqlByMethod',
+    `${byMethod('POST')} ${byMethod('OPTIONS')} ${byMethod('GET')}`
+  )
+
   setInfo(
     'gql',
     `rows=${gqlRows.length} withReq=${

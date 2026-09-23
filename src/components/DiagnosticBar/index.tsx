@@ -29,6 +29,8 @@ const DiagnosticBar = () => {
     `cleared:${counters.cleared || 0}`,
     `nav:${counters.navigated || 0}`,
     `harSet:${counters.harSet || 0}`,
+    `finGqlPost:${counters.finGqlPost || 0}`,
+    `finGqlOther:${counters.finGqlOther || 0}`,
   ].join('  ')
 
   return (
@@ -37,7 +39,7 @@ const DiagnosticBar = () => {
       <div>FINISHED {diagnosticInfo.finished}</div>
       <div>CONTENT {diagnosticInfo.content}</div>
       <div>ROWS {diagnosticInfo.rows}</div>
-      <div>GQL {diagnosticInfo.gql}</div>
+      <div>GQL {diagnosticInfo.gql} | {diagnosticInfo.gqlByMethod}</div>
       <div>MATCH {diagnosticInfo.match}</div>
       <div>WANT {diagnosticInfo.wantUrl}</div>
       <div>GQLROWS {diagnosticInfo.gqlRows}</div>
