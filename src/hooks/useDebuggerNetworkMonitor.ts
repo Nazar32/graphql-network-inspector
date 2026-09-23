@@ -159,6 +159,18 @@ export const useDebuggerNetworkMonitor = (): [
       }
 
       bumpCounter('cdpRequest')
+      const isGraphqlUrl = request.url?.includes('graphql')
+      if (isGraphqlUrl) {
+        bumpCounter('cdpReqGql')
+      }
+
+      const describe = (outcome: string, extra = '') =>
+        setInfo(
+          'cdpReq',
+          `${request.method} ${request.url?.slice(0, 60)} hasPostData=${
+            request.hasPostData
+          } inline=${Boolean(request.postData)} ${outcome} ${extra}`
+        )
 
       let postData = request.postData
       if (!postData && request.hasPostData) {
@@ -168,9 +180,15 @@ export const useDebuggerNetworkMonitor = (): [
           { requestId }
         )
         postData = result?.postData
+        if (isGraphqlUrl) {
+          bumpCounter(postData ? 'cdpFetchedPostData' : 'cdpFetchPostDataFailed')
+        }
       }
 
       if (!postData) {
+        if (isGraphqlUrl) {
+          describe('rejected=noPostData')
+        }
         return
       }
 
@@ -178,13 +196,17 @@ export const useDebuggerNetworkMonitor = (): [
       const body = postData
       const graphqlRequestBody = parseGraphqlBody(body)
       if (!graphqlRequestBody) {
+        describe('rejected=notGraphql', `len=${body.length}`)
         return
       }
 
       const primaryOperation = getFirstGraphqlOperation(graphqlRequestBody)
       if (!primaryOperation) {
+        describe('rejected=noOperation', `len=${body.length}`)
         return
       }
+
+      describe('accepted', `op=${primaryOperation.operationName}`)
 
       bumpCounter('cdpGraphql')
       startTimesRef.current.set(requestId, timestamp)
@@ -251,6 +273,8 @@ export const useDebuggerNetworkMonitor = (): [
         encodedDataLength: number
       }
 
+      bumpCounter('cdpFinished')
+
       const existing = getLatestRequests().find(
         (request) => request.id === requestId
       )
@@ -258,7 +282,7 @@ export const useDebuggerNetworkMonitor = (): [
         return
       }
 
-      bumpCounter('cdpFinished')
+      bumpCounter('cdpFinishedTracked')
 
       const startedAt = startTimesRef.current.get(requestId)
       const time = startedAt ? (timestamp - startedAt) * 1000 : 0
@@ -353,7 +377,9 @@ export const useDebuggerNetworkMonitor = (): [
       // Send no parameters. The buffer size parameters are marked
       // experimental in the protocol, and a rejected command leaves the
       // Network domain disabled, which delivers no events at all.
-      const enabled = await sendDebuggerCommand(tabId, 'Network.enable')
+      const enabled = await sendDebuggerCommand(tabId, 'Network.enable', {
+        maxPostDataSize: 5 * 1024 * 1024,
+      })
       setInfo('cdpEnabled', enabled === undefined ? 'failed' : 'ok')
       logDiagnostic('cdpNetworkEnabled', { tabId, enabled: enabled !== undefined })
     })

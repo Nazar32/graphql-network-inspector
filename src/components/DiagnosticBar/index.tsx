@@ -28,6 +28,10 @@ const DiagnosticBar = () => {
     `resp:${counters.cdpResponse || 0}`,
     `finished:${counters.cdpFinished || 0}`,
     `body:${counters.cdpBody || 0}`,
+    `reqGql:${counters.cdpReqGql || 0}`,
+    `fetchedPost:${counters.cdpFetchedPostData || 0}`,
+    `fetchFailed:${counters.cdpFetchPostDataFailed || 0}`,
+    `finTracked:${counters.cdpFinishedTracked || 0}`,
   ].join('  ')
 
   return (
@@ -35,6 +39,7 @@ const DiagnosticBar = () => {
       <div>CDP {totals}</div>
       <div>ROWS {diagnosticInfo.cdpRows}</div>
       <div>LAST {diagnosticInfo.cdpBody}</div>
+      <div>REQ {diagnosticInfo.cdpReq}</div>
       <div>EVENT {diagnosticInfo.cdpLastEvent}</div>
       <div>ERROR {diagnosticInfo.cdpLastError}</div>
     </div>
