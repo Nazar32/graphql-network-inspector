@@ -63,6 +63,14 @@ export const Toolbar = (props: IToolbarProps) => {
           className="-mr-3 dark:text-gray-400 dark:hover:text-white"
           variant="ghost"
         />
+        <Checkbox
+          id="record"
+          label="Record"
+          className="mr-2"
+          checked={captureActive}
+          onChange={onCaptureActiveChange}
+          testId="record-checkbox"
+        />
         <Textfield
           className="w-80"
           value={filterValue}
@@ -73,13 +81,6 @@ export const Toolbar = (props: IToolbarProps) => {
         <OverflowPopover
           className="flex-1 space-x-6"
           items={[
-            <Checkbox
-              id="record"
-              label="Record"
-              checked={captureActive}
-              onChange={onCaptureActiveChange}
-              testId="record-checkbox"
-            />,
             <Checkbox
               id="invert"
               label="Invert"
