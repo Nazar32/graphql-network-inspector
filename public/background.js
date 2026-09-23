@@ -3,4 +3,3 @@ chrome.runtime.onInstalled.addListener(function (details) {
     chrome.tabs.create({ url: "https://www.overstacked.io/?install=true" })
   }
 })
-

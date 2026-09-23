@@ -731,4 +731,3 @@ describe('networkHelpers.parseSSEResponse', () => {
     expect(JSON.parse(chunks[0].body)).toMatchObject({ data: { direct: true } })
   })
 })
-
