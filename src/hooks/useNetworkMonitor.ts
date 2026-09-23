@@ -166,6 +166,21 @@ const findMatchingWebRequest = async (
   )
 
   const matches = scored.filter((match) => match.rank > 0)
+
+  if (details.request?.url?.includes('graphql')) {
+    setInfo(
+      'match',
+      [
+        `pending=${scored.length}`,
+        `candidates=${matches.length}`,
+        `ranks=${JSON.stringify(matches.map((m) => m.rank))}`,
+        `candWithReq=${
+          matches.filter((m) => m.webRequest.request?.body).length
+        }`,
+      ].join(' ')
+    )
+  }
+
   if (!matches.length) {
     return undefined
   }
@@ -181,13 +196,30 @@ const findMatchingWebRequest = async (
     )
   }
   const bestMatches = matches.filter((match) => match.rank === bestRank)
+  const recordChoice = (chosen: IIncompleteNetworkRequest) => {
+    if (details.request?.url?.includes('graphql')) {
+      setInfo(
+        'chosen',
+        [
+          `rank=${bestRank}`,
+          `tied=${bestMatches.length}`,
+          `hasRequestBody=${Boolean(chosen.request?.body)}`,
+          `hasHeaders=${Boolean(chosen.request?.headers)}`,
+          `id=${chosen.id}`,
+          `url=${chosen.url === details.request.url ? 'same' : 'DIFFERENT'}`,
+        ].join(' ')
+      )
+    }
+    return chosen
+  }
+
   if (bestMatches.length === 1) {
-    return bestMatches[0].webRequest
+    return recordChoice(bestMatches[0].webRequest)
   }
 
   const startTime = getNetworkRequestStartTime(details)
   if (startTime === undefined) {
-    return bestMatches[0].webRequest
+    return recordChoice(bestMatches[0].webRequest)
   }
 
   const closest = bestMatches.reduce((best, match) => {
@@ -198,7 +230,7 @@ const findMatchingWebRequest = async (
       : best
   }, bestMatches[0])
 
-  return closest.webRequest
+  return recordChoice(closest.webRequest)
 }
 
 export const useNetworkMonitor = (): [
@@ -617,6 +649,18 @@ export const useNetworkMonitor = (): [
   // Since we build up the data from multiple events. We only want
   // to display results that have enough data to be useful.
   const completeRequests = requests.filter(isRequestComplete)
+
+  const gqlRows = requests.filter((request) =>
+    request.url.includes('graphql')
+  )
+  setInfo(
+    'gql',
+    `rows=${gqlRows.length} withReq=${
+      gqlRows.filter((r) => r.request?.body).length
+    } withResp=${gqlRows.filter((r) => r.response).length} both=${
+      gqlRows.filter((r) => r.request?.body && r.response).length
+    }`
+  )
 
   setInfo(
     'rows',
