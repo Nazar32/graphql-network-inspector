@@ -12,7 +12,7 @@ import {
   IOperationFilters,
   useOperationFilters,
 } from '../../hooks/useOperationFilters'
-import { IClearWebRequestsOptions } from '../../hooks/useNetworkMonitor'
+import { IClearWebRequestsOptions } from '../../hooks/useDebuggerNetworkMonitor'
 import { IUserSettings } from '@/services/userSettingsService'
 
 /** Debounce delay in ms for filter input */
@@ -213,6 +213,10 @@ export const NetworkPanel = (props: NetworkPanelProps) => {
     <SplitPaneLayout
       header={
         <Toolbar
+          captureActive={userSettings.isNetworkCaptureActive}
+          onCaptureActiveChange={(isNetworkCaptureActive) =>
+            setUserSettings({ isNetworkCaptureActive })
+          }
           filterValue={userSettings.filter}
           onFilterValueChange={(newFilter) => {
             setUserSettings({ filter: newFilter })

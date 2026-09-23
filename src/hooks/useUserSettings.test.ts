@@ -19,6 +19,7 @@ describe('useUserSettings', () => {
 
     // Expect initial settings to be loaded into state
     expect(result.current[0]).toEqual({
+      isNetworkCaptureActive: true,
       isPreserveLogsActive: true,
       isInvertFilterActive: false,
       isRegexActive: false,
@@ -38,6 +39,7 @@ describe('useUserSettings', () => {
 
     // Expect state to be updated
     expect(result.current[0]).toEqual({
+      isNetworkCaptureActive: true,
       isPreserveLogsActive: false,
       isInvertFilterActive: true,
       isRegexActive: false,
@@ -49,6 +51,7 @@ describe('useUserSettings', () => {
 
     // Expect setUserSettings was called with the new settings
     expect(userSettingsService.setUserSettings).toHaveBeenCalledWith({
+      isNetworkCaptureActive: true,
       isPreserveLogsActive: false,
       isInvertFilterActive: true,
       isRegexActive: false,

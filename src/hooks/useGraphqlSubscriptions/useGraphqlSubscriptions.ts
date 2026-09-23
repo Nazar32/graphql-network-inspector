@@ -4,6 +4,11 @@ import { useSSEListener } from './useSSEListener'
 import { useWebSocketListener } from './useWebSocketListener'
 import { ITrackedConnection, ISubscriptionRequest } from './types'
 import { connectionToRequest } from './utils'
+import {
+  attachDebugger,
+  detachDebugger,
+  sendDebuggerCommand,
+} from '../../services/debuggerSession'
 
 /** Maximum age in ms for closed connections before cleanup (5 minutes) */
 const CONNECTION_CLEANUP_TIMEOUT_MS = 5 * 60 * 1000
@@ -50,42 +55,25 @@ export const useGraphqlSubscriptions = (
     setRequests(filtered)
   }, [options.urlFilter])
 
-  // Attach Chrome debugger to enable network monitoring
+  // Attach Chrome debugger to enable network monitoring.
+  //
+  // The attachment is shared, because the network monitor needs the same
+  // protocol session and Chrome allows only one attachment per tab.
   useEffect(() => {
     if (!options.isEnabled) return
 
     const tabId = chrome.devtools.inspectedWindow.tabId
-    let isDetached = false
 
-    const handleDetach = (source: chrome.debugger.Debuggee) => {
-      if (source.tabId === tabId) {
-        isDetached = true
-      }
-    }
-
-    chrome.debugger.onDetach?.addListener(handleDetach)
-
-    chrome.debugger.attach({ tabId }, '1.3', () => {
-      if (chrome.runtime.lastError) {
-        console.warn('Debugger attach failed:', chrome.runtime.lastError.message)
+    attachDebugger(tabId).then((isAttached) => {
+      if (!isAttached) {
         return
       }
-      chrome.debugger.sendCommand({ tabId }, 'Network.enable', undefined, () => {
-        if (chrome.runtime.lastError) {
-          console.warn('Network.enable failed:', chrome.runtime.lastError.message)
-        }
-      })
+
+      sendDebuggerCommand(tabId, 'Network.enable')
     })
 
     return () => {
-      chrome.debugger.onDetach?.removeListener(handleDetach)
-      if (!isDetached) {
-        chrome.debugger.detach({ tabId }, () => {
-          if (chrome.runtime.lastError) {
-            // Ignore errors on detach - tab may have been closed
-          }
-        })
-      }
+      detachDebugger(tabId)
     }
   }, [chrome, options.isEnabled])
 

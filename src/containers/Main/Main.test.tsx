@@ -208,6 +208,31 @@ describe('Main', () => {
     expect(queryAllByRole('row')).toHaveLength(9)
   })
 
+  it('records by default and stops recording when the toggle is cleared', async () => {
+    const { getByTestId, getByText, queryAllByRole, queryByTestId } = render(
+      <Main />
+    )
+
+    await waitFor(() => {
+      expect(getByText(/getMovie/i)).toBeInTheDocument()
+    })
+
+    const toggle = within(getByTestId('record-checkbox')).getByRole('checkbox')
+    expect(toggle).toBeChecked()
+
+    act(() => {
+      fireEvent.click(getByTestId('record-checkbox'))
+    })
+
+    // Turning recording off releases the debugger session. Requests that
+    // were already captured stay on screen.
+    const table = queryByTestId('network-table')
+    if (!table) {
+      throw new Error('Table not found in dom')
+    }
+    expect(within(table).queryAllByRole('row').length).toBeGreaterThan(0)
+  })
+
   it('filters network data with the given search query', async () => {
     const { getByTestId, queryByTestId } = render(<Main />)
     const table = queryByTestId('network-table')

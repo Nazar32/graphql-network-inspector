@@ -1,6 +1,8 @@
 import { chromeProvider } from './chromeProvider'
 
 export interface IUserSettings {
+  // Whether the panel holds a debugger session and records traffic
+  isNetworkCaptureActive: boolean
   isPreserveLogsActive: boolean
   isInvertFilterActive: boolean
   isRegexActive: boolean

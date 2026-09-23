@@ -7,6 +7,7 @@ import {
 
 const useUserSettings = () => {
   const [settings, setSettings] = useState<IUserSettings>({
+    isNetworkCaptureActive: true,
     isPreserveLogsActive: false,
     isInvertFilterActive: false,
     isRegexActive: false,

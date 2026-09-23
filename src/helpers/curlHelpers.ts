@@ -61,12 +61,49 @@ const EXCLUDED_HEADERS = [
   'accept-encoding',
 ]
 
+/**
+ * Rebuild the request body from the parsed GraphQL payload.
+ *
+ * This is only used when Chrome did not give us the raw body. The parsed
+ * payload carries an extra `id` field that we add for the UI, so remove it.
+ *
+ * @param request the network request
+ * @returns the request body as JSON, or undefined if there is no payload
+ */
+const getFallbackBody = (
+  request: ICompleteNetworkRequest
+): string | undefined => {
+  const payloads = request?.request?.body
+  if (!payloads || !payloads.length) {
+    return undefined
+  }
+
+  const cleaned = payloads.map(({ query, variables, operationName, extensions }) => ({
+    ...(query ? { query } : {}),
+    ...(operationName ? { operationName } : {}),
+    ...(variables ? { variables } : {}),
+    ...(extensions ? { extensions } : {}),
+  }))
+
+  return JSON.stringify(cleaned.length === 1 ? cleaned[0] : cleaned)
+}
+
 export const getNetworkCurl = async (
   request: ICompleteNetworkRequest
 ): Promise<string> => {
-  // Use Chrome's network request data for cURL generation
+  // Prefer Chrome's network request data, because it carries the headers
+  // exactly as they went on the wire. It is missing when the response was
+  // never paired with the request, so fall back to the data we collected
+  // from the webRequest api.
   const chromeRequest = request?.native?.networkRequest
-  if (!chromeRequest?.request) {
+
+  const url = chromeRequest?.request?.url || request?.url
+  const method = chromeRequest?.request?.method || request?.method
+  const headers = chromeRequest?.request?.headers || request?.request?.headers
+  const body =
+    chromeRequest?.request?.postData?.text ?? getFallbackBody(request)
+
+  if (!url || !method) {
     console.warn('No Chrome request data available')
     return ''
   }
@@ -74,24 +111,23 @@ export const getNetworkCurl = async (
   const parts: string[] = []
 
   // Start with curl and URL
-  parts.push(`curl '${chromeRequest.request.url}'`)
+  parts.push(`curl '${url}'`)
 
   // Add headers, filtering out excluded ones
-  const headers = chromeRequest.request.headers || []
-  headers
+  ;(headers || [])
     .filter((header) => !EXCLUDED_HEADERS.includes(header.name.toLowerCase()))
     .forEach((header) => {
       parts.push(`-H '${header.name}: ${header.value}'`)
     })
 
   // Add method if not GET
-  if (chromeRequest.request.method !== 'GET') {
-    parts.push(`-X ${chromeRequest.request.method}`)
+  if (method !== 'GET') {
+    parts.push(`-X ${method}`)
   }
 
   // Add body with proper escaping
-  if (chromeRequest.request.postData?.text) {
-    const formattedBody = formatBody(chromeRequest.request.postData.text)
+  if (body) {
+    const formattedBody = formatBody(body)
     parts.push(`--data-raw '${formattedBody}'`)
   }
 

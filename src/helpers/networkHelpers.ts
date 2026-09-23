@@ -44,7 +44,7 @@ export interface ICompleteNetworkRequest {
 /**
  * Ephemeral interface to allow us to build a network request
  * from the various events that fire. We'll ensure the request is complete
- * and populated before we output from the useNetworkMonitor hook.
+ * and populated before we output from the network monitor hook.
  * */
 export interface IIncompleteNetworkRequest
   extends Omit<ICompleteNetworkRequest, 'request'> {
@@ -57,6 +57,21 @@ export interface IIncompleteNetworkRequest
  * @param url the url to check
  * @returns true if the url ends with a file extension (e.g. .js, .css, .png)
  */
+/**
+ * Check if a request is a CORS preflight.
+ *
+ * The browser sends an OPTIONS request to the same url before a cross
+ * origin POST. It carries no GraphQL payload, but it looks identical to
+ * the real request apart from the method, so it must never take part in
+ * the request and response pairing.
+ *
+ * @param method the request method
+ * @returns true if the request is a preflight
+ */
+export const isPreflightRequest = (method?: string): boolean => {
+  return method?.toUpperCase() === 'OPTIONS'
+}
+
 export const urlHasFileExtension = (url: string): boolean => {
   // Try to parse the url as a URL object
   try {
@@ -377,11 +392,17 @@ export const getRequestBody = async <
 
   try {
     if (isNetworkRequest(details)) {
-      return getRequestBodyFromNetworkRequest(details)
+      return await getRequestBodyFromNetworkRequest(details)
     } else {
-      return getRequestBodyFromWebRequestBodyDetails(details, headers[0] || [])
+      return await getRequestBodyFromWebRequestBodyDetails(
+        details,
+        headers[0] || []
+      )
     }
   } catch (e) {
+    // A request whose body we cannot read is not a GraphQL request. Both
+    // helpers throw for a GET whose url holds no query, which is most of
+    // the traffic on a page, so this is normal and not worth reporting.
     return undefined
   }
 }
