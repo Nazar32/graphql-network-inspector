@@ -1,7 +1,9 @@
 import { useCallback, useState } from 'react'
 import { SplitPaneLayout } from '@/components/Layout'
-import { IClearWebRequestsOptions } from '@/hooks/useNetworkMonitor'
-import { useDebuggerNetworkMonitor } from '@/hooks/useDebuggerNetworkMonitor'
+import {
+  IClearWebRequestsOptions,
+  useDebuggerNetworkMonitor,
+} from '@/hooks/useDebuggerNetworkMonitor'
 import { useSearch } from '@/hooks/useSearch'
 import { useNetworkTabs } from '@/hooks/useNetworkTabs'
 import { NetworkPanel } from '../NetworkPanel'
@@ -10,7 +12,6 @@ import { useGraphqlSubscriptions } from '../../hooks/useGraphqlSubscriptions'
 import { useOperationFilters } from '../../hooks/useOperationFilters'
 import useUserSettings from '../../hooks/useUserSettings'
 import VersionNumber from '../../components/VersionNumber'
-import DiagnosticBar from '../../components/DiagnosticBar'
 
 export const Main = () => {
   const [selectedRowId, setSelectedRowId] = useState<string | number | null>(
@@ -38,7 +39,6 @@ export const Main = () => {
   return (
     <>
       <VersionNumber />
-      <DiagnosticBar />
       <SplitPaneLayout
         leftPane={
           isSearchOpen ? (

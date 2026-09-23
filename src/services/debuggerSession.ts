@@ -1,5 +1,4 @@
 import { chromeProvider } from './chromeProvider'
-import { bumpCounter, setInfo, logDiagnostic } from './diagnostics'
 
 /**
  * A listener for Chrome DevTools Protocol events.
@@ -17,18 +16,10 @@ const handleEvent = (
   method: string,
   params?: object
 ) => {
-  bumpCounter('cdpEventAny')
-  setInfo(
-    'cdpLastEvent',
-    `${method} from=${source.tabId} attached=${attachedTabId} listeners=${listeners.size}`
-  )
-
   if (source.tabId !== attachedTabId) {
-    bumpCounter('cdpEventDropped')
     return
   }
 
-  bumpCounter('cdpEventKept')
   listeners.forEach((listener) => listener(method, params as any))
 }
 
@@ -38,10 +29,6 @@ const handleDetach = (source: chrome.debugger.Debuggee, reason?: string) => {
   if (source.tabId !== attachedTabId) {
     return
   }
-
-  bumpCounter('cdpDetached')
-  setInfo('cdpDetach', `reason=${reason}`)
-  logDiagnostic('cdpDetached', { tabId: source.tabId, reason })
 
   attachedTabId = null
   attachPromise = null
@@ -79,8 +66,6 @@ const doAttach = (tabId: number): Promise<boolean> => {
     chrome.debugger.attach({ tabId }, '1.3', () => {
       if (chrome.runtime.lastError) {
         const message = chrome.runtime.lastError.message
-        logDiagnostic('cdpAttachFailed', { tabId, message })
-        setInfo('cdpAttachError', String(message))
 
         // Chrome reports this when we are already attached, which is not a
         // failure for our purposes.
@@ -183,13 +168,11 @@ export const sendDebuggerCommand = <T>(
   return new Promise((resolve) => {
     chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
       if (chrome.runtime.lastError) {
-        logDiagnostic('cdpCommandFailed', {
+        console.warn(
+          '[GraphQL Network Inspector]',
           method,
-          message: chrome.runtime.lastError.message,
-        })
-        setInfo(
-          'cdpLastError',
-          `${method}: ${chrome.runtime.lastError.message}`
+          'failed:',
+          chrome.runtime.lastError.message
         )
         resolve(undefined)
         return

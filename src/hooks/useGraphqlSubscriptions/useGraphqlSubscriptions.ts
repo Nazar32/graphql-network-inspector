@@ -4,7 +4,6 @@ import { useSSEListener } from './useSSEListener'
 import { useWebSocketListener } from './useWebSocketListener'
 import { ITrackedConnection, ISubscriptionRequest } from './types'
 import { connectionToRequest } from './utils'
-import { logDiagnostic } from '../../services/diagnostics'
 import {
   attachDebugger,
   detachDebugger,
@@ -67,7 +66,6 @@ export const useGraphqlSubscriptions = (
 
     attachDebugger(tabId).then((isAttached) => {
       if (!isAttached) {
-        logDiagnostic('subscriptionsAttachFailed', { tabId })
         return
       }
 

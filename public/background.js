@@ -4,10 +4,3 @@ chrome.runtime.onInstalled.addListener(function (details) {
   }
 })
 
-// Print diagnostic lines sent by the devtools panel. Open this console from
-// chrome://extensions with the "service worker" link under this extension.
-chrome.runtime.onMessage.addListener(function (message) {
-  if (message && message.__gniDiagnostic) {
-    console.log("[GNI]", message.event, message.data === undefined ? "" : message.data)
-  }
-})

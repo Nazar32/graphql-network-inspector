@@ -25,9 +25,12 @@ import {
   ensureDebuggerAttached,
   isDebuggerAttached,
 } from '../services/debuggerSession'
-import { logDiagnostic, bumpCounter, setInfo } from '../services/diagnostics'
 import useLatestState from './useLatestState'
-import { IClearWebRequestsOptions } from './useNetworkMonitor'
+
+export interface IClearWebRequestsOptions {
+  clearPending?: boolean
+  clearAll?: boolean
+}
 
 interface ICdpRequest {
   url: string
@@ -43,6 +46,12 @@ interface ICdpResponse {
   headers?: Record<string, string>
   encodedDataLength?: number
 }
+
+// How much of a request body to ask Chrome to send inline
+const MAX_POST_DATA_SIZE = 5 * 1024 * 1024
+
+// How often to confirm that the debugger is still attached
+const SESSION_CHECK_INTERVAL = 2000
 
 /**
  * Turn the protocol's header map into the list shape the panel uses.
@@ -71,9 +80,9 @@ const getHeadersSize = (headers: IHeader[]): number => {
 }
 
 /**
- * Split a response body into chunks when the response is delivered in
- * parts, which happens with the @defer and @stream directives and with
- * subscriptions sent over a single connection.
+ * Split a response body into chunks when the response arrives in parts,
+ * which happens with the @defer and @stream directives and with
+ * subscriptions sent over one connection.
  *
  * @param headers the response headers
  * @param body the raw response body
@@ -106,7 +115,7 @@ const splitResponseBody = (
       }
     }
   } catch (e) {
-    logDiagnostic('splitResponseBodyFailed', { message: String(e) })
+    console.error('Error splitting response body', e)
   }
 
   return { body, isStreaming: false }
@@ -116,10 +125,10 @@ const splitResponseBody = (
  * Collect GraphQL requests over the Chrome DevTools Protocol.
  *
  * The devtools network api cannot be used for this on Chrome 152 and
- * later. It leaves the request body out of every entry, it never reports a
+ * later. It leaves the request body out of every entry, it reports no
  * finished event for a cross origin POST, and `getContent` returns null.
  * The protocol reports the same traffic with a stable request id, so the
- * request and the response never have to be paired by guesswork.
+ * request and its response never have to be paired by guesswork.
  */
 export const useDebuggerNetworkMonitor = (): [
   ICompleteNetworkRequest[],
@@ -129,11 +138,11 @@ export const useDebuggerNetworkMonitor = (): [
     ICompleteNetworkRequest[]
   >([])
 
-  // Requests that have started but are not yet shown, keyed by the
-  // protocol's request id
+  // When each request started, keyed by the protocol's request id, so the
+  // duration can be worked out once it finishes
   const startTimesRef = useRef(new Map<string, number>())
 
-  const upsertRequest = useCallback(
+  const updateRequest = useCallback(
     (id: string, update: Partial<ICompleteNetworkRequest>) => {
       setRequests((previous) => {
         const index = previous.findIndex((request) => request.id === id)
@@ -157,23 +166,10 @@ export const useDebuggerNetworkMonitor = (): [
         timestamp: number
       }
 
+      // A CORS preflight carries no GraphQL payload
       if (!request || isPreflightRequest(request.method)) {
         return
       }
-
-      bumpCounter('cdpRequest')
-      const isGraphqlUrl = request.url?.includes('graphql')
-      if (isGraphqlUrl) {
-        bumpCounter('cdpReqGql')
-      }
-
-      const describe = (outcome: string, extra = '') =>
-        setInfo(
-          'cdpReq',
-          `${request.method} ${request.url?.slice(0, 60)} hasPostData=${
-            request.hasPostData
-          } inline=${Boolean(request.postData)} ${outcome} ${extra}`
-        )
 
       let postData = request.postData
       if (!postData && request.hasPostData) {
@@ -183,35 +179,25 @@ export const useDebuggerNetworkMonitor = (): [
           { requestId }
         )
         postData = result?.postData
-        if (isGraphqlUrl) {
-          bumpCounter(postData ? 'cdpFetchedPostData' : 'cdpFetchPostDataFailed')
-        }
       }
 
       if (!postData) {
-        if (isGraphqlUrl) {
-          describe('rejected=noPostData')
-        }
         return
       }
 
       // Hold the body in a const so its type survives into the closure below
       const body = postData
+
       const graphqlRequestBody = parseGraphqlBody(body)
       if (!graphqlRequestBody) {
-        describe('rejected=notGraphql', `len=${body.length}`)
         return
       }
 
       const primaryOperation = getFirstGraphqlOperation(graphqlRequestBody)
       if (!primaryOperation) {
-        describe('rejected=noOperation', `len=${body.length}`)
         return
       }
 
-      describe('accepted', `op=${primaryOperation.operationName}`)
-
-      bumpCounter('cdpGraphql')
       startTimesRef.current.set(requestId, timestamp)
 
       const headers = toHeaderList(request.headers)
@@ -231,7 +217,10 @@ export const useDebuggerNetworkMonitor = (): [
             primaryOperation,
             headers,
             headersSize: getHeadersSize(headers),
-            body: graphqlRequestBody.map((body) => ({ ...body, id: uuid() })),
+            body: graphqlRequestBody.map((payload) => ({
+              ...payload,
+              id: uuid(),
+            })),
             bodySize: body.length,
           },
           native: {},
@@ -252,10 +241,9 @@ export const useDebuggerNetworkMonitor = (): [
         return
       }
 
-      bumpCounter('cdpResponse')
       const headers = toHeaderList(response.headers)
 
-      upsertRequest(requestId, {
+      updateRequest(requestId, {
         status: response.status,
         response: {
           headers,
@@ -265,7 +253,7 @@ export const useDebuggerNetworkMonitor = (): [
         },
       })
     },
-    [upsertRequest]
+    [updateRequest]
   )
 
   const handleLoadingFinished = useCallback(
@@ -276,16 +264,12 @@ export const useDebuggerNetworkMonitor = (): [
         encodedDataLength: number
       }
 
-      bumpCounter('cdpFinished')
-
       const existing = getLatestRequests().find(
         (request) => request.id === requestId
       )
       if (!existing) {
         return
       }
-
-      bumpCounter('cdpFinishedTracked')
 
       const startedAt = startTimesRef.current.get(requestId)
       const time = startedAt ? (timestamp - startedAt) * 1000 : 0
@@ -300,27 +284,10 @@ export const useDebuggerNetworkMonitor = (): [
         raw = result.base64Encoded ? atob(result.body) : result.body || ''
       }
 
-      if (raw) {
-        bumpCounter('cdpBody')
-      }
-
-      setInfo(
-        'cdpBody',
-        `id=${requestId} len=${raw.length} time=${Math.round(time)}ms status=${
-          existing.status
-        }`
-      )
-      logDiagnostic('cdpResponseBody', {
-        requestId,
-        url: existing.url,
-        length: raw.length,
-        gotResult: Boolean(result),
-      })
-
       const headers = existing.response?.headers || []
       const split = splitResponseBody(headers, raw)
 
-      upsertRequest(requestId, {
+      updateRequest(requestId, {
         time,
         response: {
           headers,
@@ -334,28 +301,22 @@ export const useDebuggerNetworkMonitor = (): [
 
       startTimesRef.current.delete(requestId)
     },
-    [getLatestRequests, upsertRequest]
+    [getLatestRequests, updateRequest]
   )
 
   const handleLoadingFailed = useCallback(
     (params: any) => {
-      const { requestId, errorText } = params as {
-        requestId: string
-        errorText?: string
-      }
+      const { requestId } = params as { requestId: string }
 
-      logDiagnostic('cdpLoadingFailed', { requestId, errorText })
-      upsertRequest(requestId, { status: 0 })
+      updateRequest(requestId, { status: 0 })
       startTimesRef.current.delete(requestId)
     },
-    [upsertRequest]
+    [updateRequest]
   )
 
   useEffect(() => {
     const chrome = chromeProvider()
     const tabId = chrome.devtools.inspectedWindow.tabId
-
-    bumpCounter('cdpSetup')
 
     const removeListener = addDebuggerListener((method, params) => {
       if (method === 'Network.requestWillBeSent') {
@@ -369,13 +330,10 @@ export const useDebuggerNetworkMonitor = (): [
       }
     })
 
-    const enableNetwork = async (isFirstAttach: boolean) => {
+    const startSession = async (isFirstAttach: boolean) => {
       const isAttached = isFirstAttach
         ? await attachDebugger(tabId)
         : await ensureDebuggerAttached(tabId)
-
-      setInfo('cdpAttached', String(isAttached))
-      logDiagnostic('cdpAttach', { tabId, isAttached, isFirstAttach })
 
       if (!isAttached) {
         return
@@ -383,36 +341,28 @@ export const useDebuggerNetworkMonitor = (): [
 
       // maxPostDataSize asks Chrome to put the request body straight into
       // requestWillBeSent. Without it only a hasPostData flag arrives.
-      const enabled = await sendDebuggerCommand(tabId, 'Network.enable', {
-        maxPostDataSize: 5 * 1024 * 1024,
-      })
-      setInfo('cdpEnabled', enabled === undefined ? 'failed' : 'ok')
-      logDiagnostic('cdpNetworkEnabled', {
-        tabId,
-        enabled: enabled !== undefined,
+      await sendDebuggerCommand(tabId, 'Network.enable', {
+        maxPostDataSize: MAX_POST_DATA_SIZE,
       })
     }
 
-    // Chrome drops the attachment on some navigations, which silently ends
-    // every event. Attach again whenever that happens.
+    // Chrome drops the attachment on some navigations, which ends every
+    // event without warning. Attach again whenever that happens.
     const removeDetachListener = addDetachListener(() => {
-      bumpCounter('cdpReattach')
-      setTimeout(() => enableNetwork(false), 200)
+      startSession(false)
     })
 
-    // A detach is not always reported, so check the session as well.
-    const watchdog = setInterval(() => {
+    // A detach is not always reported, so check the session as well
+    const sessionCheck = setInterval(() => {
       if (!isDebuggerAttached()) {
-        bumpCounter('cdpWatchdog')
-        enableNetwork(false)
+        startSession(false)
       }
-    }, 2000)
+    }, SESSION_CHECK_INTERVAL)
 
-    enableNetwork(true)
+    startSession(true)
 
     return () => {
-      bumpCounter('cdpTeardown')
-      clearInterval(watchdog)
+      clearInterval(sessionCheck)
       removeDetachListener()
       removeListener()
       detachDebugger(tabId)
@@ -440,13 +390,6 @@ export const useDebuggerNetworkMonitor = (): [
       }
     },
     [setRequests]
-  )
-
-  setInfo(
-    'cdpRows',
-    `rows=${requests.length} withStatus=${
-      requests.filter((request) => request.status !== -1).length
-    } withBody=${requests.filter((request) => request.response?.body).length}`
   )
 
   return [requests, clearRequests]
