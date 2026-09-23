@@ -328,8 +328,46 @@ describe('getNetworkCurl', () => {
     expect(curl).toContain("-H 'x-custom: value with 'quotes' and \"double\"'")
   })
 
-  it('should return empty string when no Chrome request data', async () => {
+  it('falls back to the webRequest data when Chrome gives no request data', async () => {
+    // Chrome 152 and later can fail to pair a response with its request,
+    // which leaves `native.networkRequest` empty. See issue #204.
     const req = mockRequest({
+      native: {
+        networkRequest: undefined,
+      },
+      request: {
+        primaryOperation: {
+          operationName: 'TestQuery',
+          operation: 'query',
+        },
+        headers: [
+          { name: 'content-type', value: 'application/json' },
+          { name: 'authorization', value: 'Bearer token123' },
+        ],
+        headersSize: 0,
+        body: [
+          {
+            id: 'some-ui-id',
+            query: 'query { test }',
+            variables: {},
+          },
+        ],
+        bodySize: 0,
+      },
+    })
+    const curl = await getNetworkCurl(req)
+    expect(curl).toContain("curl 'https://api.example.com/graphql'")
+    expect(curl).toContain("-H 'authorization: Bearer token123'")
+    expect(curl).toContain('-X POST')
+    expect(curl).toContain('"query":"query { test }"')
+    // The id we add for the UI must not leak into the command
+    expect(curl).not.toContain('some-ui-id')
+  })
+
+  it('returns an empty string when there is no request data at all', async () => {
+    const req = mockRequest({
+      url: undefined,
+      method: undefined,
       native: {
         networkRequest: undefined,
       },

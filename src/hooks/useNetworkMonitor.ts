@@ -16,13 +16,15 @@ import {
   IResponseChunk,
   getRequestBody,
   isRequestComplete,
-  matchWebAndNetworkRequest,
   urlHasFileExtension,
   isMultipartMixedResponse,
   getMultipartMixedBoundary,
   parseMultipartMixedResponse,
   isSSEResponse,
   parseSSEResponse,
+  getRequestMatchConfidence,
+  getNetworkRequestStartTime,
+  MATCH_CONFIDENCE_RANK,
 } from '../helpers/networkHelpers'
 import useLatestState from './useLatestState'
 
@@ -131,30 +133,71 @@ const processNetworkRequest = (
 }
 
 /**
- * Match a network request to a webRequest
+ * Match a network request to a webRequest.
  *
- * @param webRequests
- * @param details
- * @returns
+ * The webRequest api and the devtools network api share no request id, so
+ * the pair must be found by comparing fields. Each pending request is given
+ * a confidence level and the strongest one wins. When several requests are
+ * equally strong, we pick the one that started closest to this response.
+ *
+ * @param webRequests every request we have seen so far
+ * @param details the finished devtools network request
+ * @returns the matching pending request, or undefined
  */
 const findMatchingWebRequest = async (
   webRequests: IIncompleteNetworkRequest[],
   details: chrome.devtools.network.Request
-) => {
-  const match = await Promise.all(
+): Promise<IIncompleteNetworkRequest | undefined> => {
+  const scored = await Promise.all(
     webRequests
       // Don't target requests that already have a response
       .filter((webRequest) => !webRequest.response)
-      .map(async (webRequest) => {
-        const isMatch = await matchWebAndNetworkRequest(
-          details,
-          webRequest.native?.webRequest || null,
-          webRequest.request?.headers || []
-        )
-        return isMatch ? webRequest : null
-      })
+      .map(async (webRequest) => ({
+        webRequest,
+        rank: MATCH_CONFIDENCE_RANK[
+          await getRequestMatchConfidence(
+            details,
+            webRequest.native?.webRequest || null,
+            webRequest.request?.headers || []
+          )
+        ],
+      }))
   )
-  return match.filter((r) => r)[0]
+
+  const matches = scored.filter((match) => match.rank > 0)
+  if (!matches.length) {
+    return undefined
+  }
+
+  const bestRank = Math.max(...matches.map((match) => match.rank))
+
+  if (bestRank < MATCH_CONFIDENCE_RANK.body) {
+    // The request body was not available on both sides, so the pair was
+    // found from weaker signals. This is expected on Chrome 152 and later.
+    console.debug(
+      '[GraphQL Network Inspector] paired a response without a body match',
+      { url: details.request.url, rank: bestRank }
+    )
+  }
+  const bestMatches = matches.filter((match) => match.rank === bestRank)
+  if (bestMatches.length === 1) {
+    return bestMatches[0].webRequest
+  }
+
+  const startTime = getNetworkRequestStartTime(details)
+  if (startTime === undefined) {
+    return bestMatches[0].webRequest
+  }
+
+  const closest = bestMatches.reduce((best, match) => {
+    const bestStart = best.webRequest.native?.webRequest?.timeStamp || 0
+    const matchStart = match.webRequest.native?.webRequest?.timeStamp || 0
+    return Math.abs(matchStart - startTime) < Math.abs(bestStart - startTime)
+      ? match
+      : best
+  }, bestMatches[0])
+
+  return closest.webRequest
 }
 
 export const useNetworkMonitor = (): [
@@ -285,9 +328,20 @@ export const useNetworkMonitor = (): [
           return
         }
 
-        const isValid = await validateNetworkRequest(details)
+        // Chrome 152 and later can leave `request.postData` out of the
+        // devtools entry, so we cannot always read the body to confirm that
+        // this is a GraphQL request. Instead, continue only when a pending
+        // request to the same endpoint is waiting for a response. Those
+        // pending requests were already confirmed as GraphQL by the
+        // webRequest handlers.
+        const hasPendingCandidate = getLatestRequests().some(
+          (request) =>
+            !request.response &&
+            request.url === details.request.url &&
+            request.method === details.request.method
+        )
 
-        if (!isValid) {
+        if (!hasPendingCandidate) {
           return
         }
 
@@ -335,9 +389,17 @@ export const useNetworkMonitor = (): [
   const handleHAREntries = useCallback(
     async (entries: chrome.devtools.network.Request[]) => {
       try {
-        const validEntries = entries.filter((details) => {
-          return 'getContent' in details && validateNetworkRequest(details)
-        })
+        const validationResults = await Promise.all(
+          entries.map(async (details) => {
+            if (!('getContent' in details)) {
+              return false
+            }
+            return validateNetworkRequest(details)
+          })
+        )
+        const validEntries = entries.filter(
+          (_details, index) => validationResults[index]
+        )
 
         const entriesWithContent = await Promise.all(
           validEntries.map((details) => {

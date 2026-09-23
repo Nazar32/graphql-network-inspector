@@ -1,4 +1,9 @@
-import { IGraphqlRequestBody, IOperationDetails } from './graphqlHelpers'
+import {
+  IGraphqlRequestBody,
+  IOperationDetails,
+  parseGraphqlBody,
+  getFirstGraphqlOperation,
+} from './graphqlHelpers'
 import decodeQueryParam from './decodeQueryParam'
 import { parse } from './safeJson'
 import { decompress, CompressionType } from './gzip'
@@ -416,6 +421,160 @@ export const matchWebAndNetworkRequest = async (
   } catch (e) {
     return false
   }
+}
+
+/**
+ * How sure we are that a devtools request and a webRequest describe the
+ * same HTTP request.
+ *
+ * The two Chrome APIs share no request id, so the pair must be found by
+ * comparing fields. Chrome 152 and later can omit `request.postData` from
+ * the devtools entry, which makes the body comparison impossible. The
+ * weaker levels below keep the pairing working when the body is missing.
+ *
+ * - `body`: same method, url and request body. This is an exact pair.
+ * - `operation`: same method, url and GraphQL operation name.
+ * - `size`: same method, url and request body size.
+ * - `endpoint`: same method and url only.
+ * - `none`: not the same request.
+ */
+export type MatchConfidence = 'body' | 'operation' | 'size' | 'endpoint' | 'none'
+
+export const MATCH_CONFIDENCE_RANK: Record<MatchConfidence, number> = {
+  body: 4,
+  operation: 3,
+  size: 2,
+  endpoint: 1,
+  none: 0,
+}
+
+/**
+ * Read the GraphQL operation name out of a raw request body.
+ *
+ * @param body the raw request body
+ * @returns the operation name, or undefined if the body is not GraphQL
+ */
+const getPrimaryOperationName = (body?: string): string | undefined => {
+  if (!body) {
+    return undefined
+  }
+
+  const graphqlBody = parseGraphqlBody(body)
+  if (!graphqlBody) {
+    return undefined
+  }
+
+  return getFirstGraphqlOperation(graphqlBody)?.operationName
+}
+
+/**
+ * Add up the byte length of a webRequest body.
+ *
+ * @param webRequest the webRequest details
+ * @returns the number of bytes, or undefined if there is no raw body
+ */
+const getWebRequestBodySize = (
+  webRequest: chrome.webRequest.WebRequestBodyDetails
+): number | undefined => {
+  const raw = webRequest.requestBody?.raw
+  if (!raw || !raw.length) {
+    return undefined
+  }
+
+  return raw.reduce((total, part) => total + (part.bytes?.byteLength || 0), 0)
+}
+
+/**
+ * Compare a devtools request and a webRequest and report how sure we are
+ * that they are the same HTTP request.
+ *
+ * @param details the devtools network request
+ * @param webRequest the webRequest details, or null
+ * @param headers the request headers seen by the webRequest api
+ * @returns the confidence level of the pair
+ */
+export const getRequestMatchConfidence = async (
+  details: chrome.devtools.network.Request,
+  webRequest: chrome.webRequest.WebRequestBodyDetails | null,
+  headers: IHeader[]
+): Promise<MatchConfidence> => {
+  if (!webRequest) {
+    return 'none'
+  }
+
+  if (details.request.method !== webRequest.method) {
+    return 'none'
+  }
+
+  if (details.request.url !== webRequest.url) {
+    return 'none'
+  }
+
+  let webRequestBody: string | undefined
+  let networkRequestBody: string | undefined
+
+  try {
+    webRequestBody = await getRequestBodyFromWebRequestBodyDetails(
+      webRequest,
+      headers
+    )
+  } catch (e) {
+    webRequestBody = undefined
+  }
+
+  try {
+    networkRequestBody = await getRequestBodyFromNetworkRequest(details)
+  } catch (e) {
+    networkRequestBody = undefined
+  }
+
+  if (webRequestBody && networkRequestBody) {
+    if (webRequestBody === networkRequestBody) {
+      return 'body'
+    }
+
+    // Both bodies are present but they differ. Another extension can
+    // rewrite a request body in flight, so compare the operation name
+    // before we decide that these are different requests.
+    const webOperation = getPrimaryOperationName(webRequestBody)
+    const networkOperation = getPrimaryOperationName(networkRequestBody)
+    if (webOperation && networkOperation && webOperation === networkOperation) {
+      return 'operation'
+    }
+
+    return 'none'
+  }
+
+  // The devtools entry carries no body. Fall back to the body size, and
+  // then to the endpoint alone.
+  const webRequestBodySize = getWebRequestBodySize(webRequest)
+  const networkBodySize = details.request.bodySize
+  if (
+    webRequestBodySize !== undefined &&
+    networkBodySize > 0 &&
+    webRequestBodySize === networkBodySize
+  ) {
+    return 'size'
+  }
+
+  return 'endpoint'
+}
+
+/**
+ * Read the start time of a devtools request as a timestamp.
+ *
+ * @param details the devtools network request
+ * @returns the start time in milliseconds, or undefined if it is not set
+ */
+export const getNetworkRequestStartTime = (
+  details: chrome.devtools.network.Request
+): number | undefined => {
+  if (!details.startedDateTime) {
+    return undefined
+  }
+
+  const startTime = new Date(details.startedDateTime).getTime()
+  return Number.isNaN(startTime) ? undefined : startTime
 }
 
 /**
