@@ -11,6 +11,8 @@ import { useOperationFilters } from '@/hooks/useOperationFilters'
 import { LearnIcon } from '../../components/Icons/LearnIcon'
 
 interface IToolbarProps {
+  captureActive: boolean
+  onCaptureActiveChange: (captureActive: boolean) => void
   filterValue: string
   onFilterValueChange: (filterValue: string) => void
   preserveLogs: boolean
@@ -30,6 +32,8 @@ interface IToolbarProps {
 
 export const Toolbar = (props: IToolbarProps) => {
   const {
+    captureActive,
+    onCaptureActiveChange,
     filterValue,
     onFilterValueChange,
     preserveLogs,
@@ -69,6 +73,13 @@ export const Toolbar = (props: IToolbarProps) => {
         <OverflowPopover
           className="flex-1 space-x-6"
           items={[
+            <Checkbox
+              id="record"
+              label="Record"
+              checked={captureActive}
+              onChange={onCaptureActiveChange}
+              testId="record-checkbox"
+            />,
             <Checkbox
               id="invert"
               label="Invert"

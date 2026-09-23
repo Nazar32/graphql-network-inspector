@@ -213,6 +213,10 @@ export const NetworkPanel = (props: NetworkPanelProps) => {
     <SplitPaneLayout
       header={
         <Toolbar
+          captureActive={userSettings.isNetworkCaptureActive}
+          onCaptureActiveChange={(isNetworkCaptureActive) =>
+            setUserSettings({ isNetworkCaptureActive })
+          }
           filterValue={userSettings.filter}
           onFilterValueChange={(newFilter) => {
             setUserSettings({ filter: newFilter })

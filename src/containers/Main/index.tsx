@@ -19,7 +19,9 @@ export const Main = () => {
   )
   const { operationFilters } = useOperationFilters()
   const [userSettings, setUserSettings] = useUserSettings()
-  const [networkRequests, clearWebRequests] = useDebuggerNetworkMonitor()
+  const [networkRequests, clearWebRequests] = useDebuggerNetworkMonitor({
+    isEnabled: userSettings.isNetworkCaptureActive,
+  })
   const [webSocketNetworkRequests, clearWebSocketNetworkRequests] =
     useGraphqlSubscriptions({
       isEnabled: operationFilters.subscription,

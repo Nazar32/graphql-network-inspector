@@ -130,10 +130,11 @@ const splitResponseBody = (
  * The protocol reports the same traffic with a stable request id, so the
  * request and its response never have to be paired by guesswork.
  */
-export const useDebuggerNetworkMonitor = (): [
-  ICompleteNetworkRequest[],
-  (opts?: IClearWebRequestsOptions) => void
-] => {
+export const useDebuggerNetworkMonitor = (options: {
+  isEnabled: boolean
+}): [ICompleteNetworkRequest[], (opts?: IClearWebRequestsOptions) => void] => {
+  const { isEnabled } = options
+
   const [requests, setRequests, getLatestRequests] = useLatestState<
     ICompleteNetworkRequest[]
   >([])
@@ -315,6 +316,12 @@ export const useDebuggerNetworkMonitor = (): [
   )
 
   useEffect(() => {
+    // Attaching the debugger makes Chrome show a banner on the page, so
+    // the panel only holds a session while recording is switched on.
+    if (!isEnabled) {
+      return
+    }
+
     const chrome = chromeProvider()
     const tabId = chrome.devtools.inspectedWindow.tabId
 
@@ -368,6 +375,7 @@ export const useDebuggerNetworkMonitor = (): [
       detachDebugger(tabId)
     }
   }, [
+    isEnabled,
     handleRequestWillBeSent,
     handleResponseReceived,
     handleLoadingFinished,
